@@ -1,8 +1,197 @@
 //! A platform agnostic Rust driver for the Akafugu TWIDisplay 4-digit 7-segment display controller,
 //! based on the [`embedded-hal`](https://github.com/japaric/embedded-hal) traits.
 //!
-//! ADD DOCUMENTATION
-//! 
+//! This driver allows you to:
+//! - Display single digits or characters, also at a selected position
+//! - Display text, although some characters may not be available (see display documentation)
+//! - Clear the display
+//! - Show the current I2C address
+//! - Change the I2C address (experimental function)
+//! - Display time in HH.MM format
+//! - Display temperature or humidity, with settable lower/upper threshold
+//!
+//!## The device
+//! The TWI 7-segment Display is an easy to use 4-digit 7-segment display that is controlled using the TWI (I2C compatible) protocol.
+//! It is based on an ATMega4313 MCU, acting as a peripheral I2C device.
+//!
+//! ### Information: [TWIDisplay](https://www.akafugu.jp/posts/products/twidisplay/)
+//!
+//! ## Usage examples (see also examples folder)
+//!
+//! Please find additional examples using hardware in this repository: [examples]
+//!
+//! [examples]: https://github.com/nebelgrau77/akafugu_twidisplay-rs-async/tree/main/examples
+//!
+//! ### Initialization
+//! A new instance of the device is created as follows:
+//!
+//! ```rust
+//! use akafugu_twidisplay::*:
+//!
+//! let mut akafugu = TWIDisplay::new(i2c, DEFAULT_ADDRESS);
+//! ```
+//!
+//! The default address is 0x12. If the address was changed with the `set_address()` function,
+//! the new address must be used after a power down-power up sequence.  
+//!
+//!
+//! ### Main functions
+//!
+//! Display can be cleared with the following command:
+//! ```rust
+//! akafugu.clear_display().await.unwrap();
+//! ```
+//!
+//! Digits and/or characters can either be simply sent to display, or displayed at defined positions.
+//!
+//! ```rust
+//! // display digit '7' at position 2 (positions are 0,1,2,3 from left to right)
+//! akafugu.display_digit(2, 7).await.unwrap();
+//! // display character 'P' at position 3
+//! akafugu.display_char(3,'P').await.unwrap();
+//! ```
+//!
+//! If a digit/character is just sent to the display, it will appear according to the selected mode
+//! (scroll or rotate) - please see the documentation.
+//!
+//! ```rust
+//! akafugu.send_char('A').await.unwrap();
+//! akafugu.send_char('B').await.unwrap();
+//! akafugu.send_char('C').await.unwrap();
+//! akafugu.send_char('D').await.unwrap();
+//! ```
+//!
+//! This will display `ABCD`.
+//!
+//! ```rust
+//! akafugu.send_char('E').await.unwrap();
+//! ```
+//!
+//! Depending on the selected mode the display will show now:
+//! * in SCROLL mode: 'BCDE'
+//! * in ROTATE mode: 'EBCD'
+//!
+//! Text can be sent to display as string literals:
+//!
+//! ```rust
+//! akafugu.send_text("HELLO LOOP PULL CALL").await.unwrap();
+//! ```
+//!
+//! Numbers from 0-9999 range can be displayed with the following function:
+//! ```rust
+//! akafugu.display_number(1234).await.unwrap();
+//! ```
+//! _NOTE_: Numbers will be displayed with leading zeroes, e.g. `0023`.
+//!
+//! Dots can be turned on or off using this function:
+//! ```rust
+//! // this will turn on the first and the third dot from the left
+//! akafugu.display_dots([true, false, true, false]).await.unwrap();
+//! ```
+//!
+//!
+//! ### Control functions
+//!
+//! Display mode can be changed as follows:
+//!
+//! ```rust
+//! akafugu.set_mode(Mode::Scroll).await.unwrap(); // default mode is `Rotate`
+//! ```
+//!
+//! Brightness can be set between 0 and 255, where 127 is approx. 50% brightness.
+//! ```rust
+//! akafugu.set_brightness(200).await.unwrap();
+//! ```
+//!
+//! The I2C address of the device can be changed from the default 0x12 as follows:
+//! ```rust
+//! akafugu.set_address(0x20).await.unwrap();
+//! ```
+//!
+//! The new address will be active after a power down, power up sequence.
+//!
+//! __NOTE:__ According to the documentation, the allowed range of addresses is 0x00-0x7F,
+//! but addresses including and over 0x40 don't seem to work correctly, even though
+//! they are correctly displayed. In such case 0x00 must be used to access the device and change the address again.
+//! For this reason in this driver the address setting is restricted to 0x00-0x39 range.
+//!
+//! To show the current I2C address use the following command:
+//! ```rust
+//! akafugu.display_address().await.unwrap();
+//! ```
+//! The same can be achieved by simply connecting only the VCC and GND pins of the display.
+//!
+//! ### Convenience functions
+//! The driver has three additional functions, that can be useful for clock or sensor applications.
+//!
+//! #### Display time
+//!
+//! Time is displayed in HH.MM format, with the central dot displayed or not:
+//!
+//! ```rust
+//!
+//! // get time from the clock
+//! let (hours, minutes, seconds) = some_rtc_function();
+//!
+//! // blink the dot: on if number of seconds is even, otherwise off
+//! if seconds % 2 == 0 {
+//!     akafugu.display_time(hours, minutes, true).await.unwrap()
+//! } else {
+//!     akafugu.display_time(hours, minutes, false).await.unwrap()
+//! }
+//! ```
+//!
+//! #### Display date
+//!  
+//!
+//! Date can be displayed either in MMDD or DDMM format, with the central dot on or off.
+//!
+//! ```rust
+//!
+//! // get date from the clock
+//! let (month, day) = some_rtc_function();
+//!
+//! // display date in MMDD format with the central dot on
+//! akafugu.display_date(month, day, DateFormat::MMDD, true).await.unwrap()
+//!
+//! ```
+//!
+//!
+//! #### Display temperature
+//!
+//! Displays integer temperature values with a unit of choice (Celsius/Fahrenheit), no leading zeros.
+//! The function allows setting lower and upper threshold: if the supplied value is below the lower threshold,
+//! the display will show `-LL-`, if above the upper threshold, it will show `-HH-`.
+//! This can be useful for sensor applications such as weather stations: thresholds can be set to the limits of
+//! reliable readings, e.g. -30 and +60 Celsius degrees, etc.
+//! Thresholds are optional and if not given, will default to the minimum and maximum limits, which are set to -99 and 999, respectively.
+//! If the supplied value exceeds the limit, the display will show `----`.  
+//!
+//! ```rust
+//! let temp_reading = some_sensor_reading();
+//! // display temperature with unit 'C', lower threshold at -50 degrees,
+//! // no upper threshold (defaults to +999)
+//! // temp_reading < -50 will show as `-LL-`, temp_reading < -99 will show as `----`
+//! akafugu.display_temperature(temperature, TempUnits::Celsius, Some(-50), None).await.unwrap();
+//! ```
+//!
+//! #### Display humidity
+//!
+//! Displays integer humidity values with a default unit 'H', no leading zeros.
+//! The function allows setting lower and upper threshold: if the supplied value is below the lower threshold,
+//! the display will show `-LL-`, if above the upper threshold, it will show `-HH-`.
+//! This can be useful for sensor applications such as weather stations: thresholds can be set to the limits of
+//! reliable readings, e.g. between 10 and 90% of relative humidity.
+//! Thresholds are optional and if not given, will default to the minimum and maximum limits, which are set to 0 and 100, respectively.
+//! If the supplied value exceeds the limit, the display will show `----`.  
+//!
+//! ```rust
+//! let hum_reading = some_sensor_reading();
+//! // display humidity, lower threshold at 10%, upper threshold at 90%.
+//! // temp_reading < 10 will show as `-LL-`, temp_reading > 90 will show as `-HH-`,
+//! // readings below 0 or above 100 will show as `----`
+//! akafugu.display_humidity(humidity, Some(10), Some(90)).await.unwrap();
+//! ```
 
 
 #![deny(unsafe_code)]
