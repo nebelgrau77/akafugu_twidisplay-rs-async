@@ -10,7 +10,7 @@ homepage = "https://www.akafugu.jp/posts/products/twidisplay/"
 repository = "https://github.com/nebelgrau77/akafugu_twidisplay-rs.git"
 license = "MIT OR Apache-2.0"
 keywords = ["akafugu", "twidisplay", "lcd", "driver", "async"]
-categories = ["embedded", "hardware-support", "no-std", "async"]
+categories = ["embedded", "hardware-support", "no-std"]
 
 include = [
     "**/*.rs",
